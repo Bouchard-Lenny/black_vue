@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security.api_key import APIKeyHeader
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
@@ -8,7 +9,7 @@ load_dotenv()
 
 app = FastAPI(title="Dashcam Security API")
 
-# Configuration DB (identique au subscriber)
+# --- 1. CONFIGURATION DB ---
 DB_SETTINGS = {
     "dbname": os.getenv("DB_NAME"),
     "user": os.getenv("DB_USER"),
@@ -17,17 +18,34 @@ DB_SETTINGS = {
     "port": os.getenv("DB_PORT")
 }
 
+# --- 2. API KEY SECURITY ---
+API_KEY = os.getenv("API_KEY")
+API_KEY_NAME = "X-API-KEY"
+
+# This defines the header we are looking for
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+def get_api_key(api_key: str = Security(api_key_header)):
+    if api_key == API_KEY:
+        return api_key
+    # If the key is missing or wrong, we kick them out
+    raise HTTPException(
+        status_code=403,
+        detail="Forbidden access: Invalid API Key"
+    )
+
+# --- 3. ROUTES ---
 @app.get("/")
 def read_root():
-    return {"message": "Bienvenue sur l'API de consultation des détections Dashcam"}
+    return {"message": "Welcome to the Dashcam API. Please use your API Key to access data."}
 
+# Notice the added parameter: api_key: str = Depends(get_api_key)
 @app.get("/recherche/{plate}")
-def get_detections(plate: str):
+def get_detections(plate: str, api_key: str = Depends(get_api_key)):
     try:
         conn = psycopg2.connect(**DB_SETTINGS)
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
-        # Correction ici : on utilise 'timestamp' au lieu de 'created_at'
         query = "SELECT * FROM detections WHERE plate_number = %s ORDER BY timestamp DESC;"
         cur.execute(query, (plate.upper(),))
         
@@ -36,9 +54,8 @@ def get_detections(plate: str):
         conn.close()
         
         if not results:
-            return {"plate": plate.upper(), "message": "Aucune détection trouvée", "history": []}
+            return {"plate": plate.upper(), "message": "No detection found", "history": []}
 
-        # Conversion des types pour que le JSON soit valide
         for row in results:
             if row.get('timestamp'):
                 row['timestamp'] = row['timestamp'].isoformat()
@@ -55,14 +72,14 @@ def get_detections(plate: str):
         }
         
     except Exception as e:
-        print(f"❌ Erreur API : {e}")
+        print(f"❌ API Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+# Security added here as well
 @app.get("/stolen/{plate}")
-def check_stolen_vehicle(plate: str):
+def check_stolen_vehicle(plate: str, api_key: str = Depends(get_api_key)):
     try:
         conn = psycopg2.connect(**DB_SETTINGS)
-        # On utilise RealDictCursor pour récupérer les résultats sous forme de dictionnaire
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
         query = "SELECT description FROM stolen_vehicles WHERE plate_number = %s;"
@@ -72,14 +89,12 @@ def check_stolen_vehicle(plate: str):
         cur.close()
         conn.close()
         
-        # Si la plaque est trouvée dans la table stolen_vehicles
         if result:
             return {
                 "plate": plate.upper(),
                 "stolen": True,
                 "description": result['description']
             }
-        # Si la plaque n'est pas trouvée
         else:
             return {
                 "plate": plate.upper(),
@@ -87,5 +102,5 @@ def check_stolen_vehicle(plate: str):
             }
             
     except Exception as e:
-        print(f"❌ Erreur API sur la route /stolen : {e}")
+        print(f"❌ API Error on /stolen route: {e}")
         raise HTTPException(status_code=500, detail=str(e))
