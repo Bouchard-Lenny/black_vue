@@ -83,7 +83,7 @@ def on_message(client, userdata, msg):
         # 1. Sauvegarde
         save_to_db(plate, lat, lon, device_id)
         
-        # 2. Vérification Alerte (BIEN INDENTÉ ICI)
+        # 2. Vérification Alerte
         stolen_info = check_stolen(plate)
         if stolen_info:
             print("\n" + "!"*50)
@@ -94,43 +94,24 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print(f"⚠️ Erreur de traitement : {e}")
 
-# --- INITIALISATION ---
-client = mqtt.Client(client_id="BDD")
-client.on_connect = on_connect
-client.on_message = on_message
-
-client.tls_set(
-    ca_certs="AmazonRootCA1.pem",
-    certfile="BDDfull.crt",
-    keyfile="BDD.key",
-    cert_reqs=ssl.CERT_REQUIRED,
-    tls_version=ssl.PROTOCOL_TLSv1_2
-)
-
-print("🚀 Lancement du Backend Ingestor...")
-try:
-    client.connect(BROKER_URL, PORT, keepalive=60)
-    client.loop_forever()
-except Exception as e:
-    print(f"💥 Erreur fatale : {e}")
 # --- 6. INITIALISATION DU CLIENT ---
-# ID unique pour éviter que AWS ne te déconnecte
-client = mqtt.Client(client_id="BDD")
+# ID unique pour éviter que AWS ne te déconnecte (Mise à jour v2 de l'API MQTT)
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id="BDD")
 
 client.on_connect = on_connect
 client.on_message = on_message
 
-# Configuration TLS
+# Configuration TLS avec les bons chemins relatifs
 try:
     client.tls_set(
-        ca_certs="AmazonRootCA1.pem",
-        certfile="BDDfull.crt",
-        keyfile="BDD.key",
+        ca_certs="../certs/AmazonRootCA1.pem",
+        certfile="../certs/BDDfull.crt",
+        keyfile="../certs/BDD.key",
         cert_reqs=ssl.CERT_REQUIRED,
         tls_version=ssl.PROTOCOL_TLSv1_2
     )
-except FileNotFoundError:
-    print("❌ ERREUR : Un des fichiers (.pem, .crt, .key) est manquant dans le dossier !")
+except FileNotFoundError as e:
+    print(f"❌ ERREUR : Impossible de trouver les certificats : {e}")
     sys.exit(1)
 
 # Connexion

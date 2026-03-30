@@ -57,3 +57,35 @@ def get_detections(plate: str):
     except Exception as e:
         print(f"❌ Erreur API : {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/stolen/{plate}")
+def check_stolen_vehicle(plate: str):
+    try:
+        conn = psycopg2.connect(**DB_SETTINGS)
+        # On utilise RealDictCursor pour récupérer les résultats sous forme de dictionnaire
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        query = "SELECT description FROM stolen_vehicles WHERE plate_number = %s;"
+        cur.execute(query, (plate.upper(),))
+        
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        # Si la plaque est trouvée dans la table stolen_vehicles
+        if result:
+            return {
+                "plate": plate.upper(),
+                "stolen": True,
+                "description": result['description']
+            }
+        # Si la plaque n'est pas trouvée
+        else:
+            return {
+                "plate": plate.upper(),
+                "stolen": False
+            }
+            
+    except Exception as e:
+        print(f"❌ Erreur API sur la route /stolen : {e}")
+        raise HTTPException(status_code=500, detail=str(e))
