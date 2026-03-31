@@ -62,21 +62,30 @@ def start_mqtt():
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 model = genai.GenerativeModel("gemini-2.5-flash")
-chat  = model.start_chat(history=[])
 
 SYSTEM_PROMPT = """Tu es un assistant pour la plateforme Blackvue, utilisé par des assureurs et forces de l'ordre.
 Tu aides à rechercher des véhicules détectés par des dashcams connectées.
 Réponds toujours en français, de façon concise et professionnelle.
 Quand tu affiches une liste de détections, utilise toujours un tableau Markdown avec les colonnes : Date/Heure | Latitude | Longitude | Appareil.
+Si le statut véhicule volé indique "stolen: true", signale-le en début de réponse sur une ligne dédiée, puis saute une ligne, puis affiche la description sur une nouvelle ligne.
 """
 
 def extract_plate(text: str):
-    match = re.search(r'\b[A-Z]{2}-?\d{3}-?[A-Z]{2}\b', text.upper())
-    return match.group(0) if match else None
+    match = re.search(r'\b([A-Z]{2})[\s-]?(\d{3})[\s-]?([A-Z]{2})\b', text.upper())
+    if match:
+        return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+    return None
 
 def search_plate(plate: str) -> dict:
     try:
         r = requests.get(f"{API_URL}/recherche/{plate}", timeout=5)
+        return r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+def check_stolen(plate: str) -> dict:
+    try:
+        r = requests.get(f"{API_URL}/stolen/{plate}", timeout=5)
         return r.json()
     except Exception as e:
         return {"error": str(e)}
@@ -87,6 +96,7 @@ app = FastAPI()
 
 class Message(BaseModel):
     text: str
+    history: list = []
 
 @app.on_event("startup")
 def startup():
@@ -104,17 +114,32 @@ def chat_endpoint(msg: Message):
     except SanitizationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    plate     = extract_plate(user_text)
-    api_data  = search_plate(plate) if plate else None
+    plate        = extract_plate(user_text)
+    if plate:
+        api_data = search_plate(plate)
+        if not api_data.get("history"):
+            api_data = search_plate(plate.replace("-", ""))
+        stolen_data = check_stolen(plate)
+        if not stolen_data:
+            stolen_data = check_stolen(plate.replace("-", ""))
+    else:
+        api_data    = None
+        stolen_data = None
 
     context = SYSTEM_PROMPT + "\n\n" + user_text
     if api_data:
-        context += f"\n\n[Données BDD] : {json.dumps(api_data, ensure_ascii=False)}"
+        context += f"\n\n[Historique détections] : {json.dumps(api_data, ensure_ascii=False)}"
+    if stolen_data:
+        context += f"\n\n[Statut véhicule volé] : {json.dumps(stolen_data, ensure_ascii=False)}"
     if recent_detections:
         context += f"\n\n[Détections récentes MQTT] : {json.dumps(recent_detections[-5:], ensure_ascii=False)}"
 
+    history = msg.history + [{"role": "user", "parts": [{"text": context}]}]
+    chat = model.start_chat(history=history[:-1])
     response = chat.send_message(context)
-    return JSONResponse({"reply": response.text})
+
+    history.append({"role": "model", "parts": [{"text": response.text}]})
+    return JSONResponse({"reply": response.text, "history": history})
 
 @app.get("/detections")
 def get_detections():

@@ -57,23 +57,16 @@ cp database/init_db.sql /tmp/
 sudo -u postgres psql -f /tmp/init_db.sql
 ```
 
+## Installation
+
+```bash
+./setup.sh
+```
+
 ## Lancement
 
-Ouvrir **3 terminaux** :
-
-**Terminal 1 — API BDD**
 ```bash
-venv/bin/uvicorn api.api:app --reload
-```
-
-**Terminal 2 — Subscriber MQTT**
-```bash
-cd api && ../venv/bin/python subscriber.py
-```
-
-**Terminal 3 — Chatbot**
-```bash
-venv/bin/uvicorn chatbot.server:app --reload --port 8001
+./start.sh
 ```
 
 Ouvrir `http://127.0.0.1:8001` dans le navigateur.

@@ -4,6 +4,7 @@ import psycopg2
 import json
 import sys
 import os
+import socket
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -96,7 +97,7 @@ def on_message(client, userdata, msg):
 
 # --- 6. INITIALISATION DU CLIENT ---
 # ID unique pour éviter que AWS ne te déconnecte (Mise à jour v2 de l'API MQTT)
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id="BDD")
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=f"BDD-{socket.gethostname()}")
 
 client.on_connect = on_connect
 client.on_message = on_message
