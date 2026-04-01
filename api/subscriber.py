@@ -4,6 +4,7 @@ import psycopg2
 import json
 import sys
 import os
+import re
 import socket
 from dotenv import load_dotenv
 
@@ -23,7 +24,14 @@ BROKER_URL = os.getenv("BROKER_URL")
 PORT = 8883
 TOPIC = "#"  # Écoute absolue pour le diagnostic
 
-# --- 3. FONCTION POUR ENREGISTRER DANS POSTGRESQL ---
+# --- 3. NORMALISATION DE LA PLAQUE ---
+def normalize_plate(plate: str) -> str:
+    match = re.fullmatch(r'([A-Za-z]{2})[\s\-]?(\d{3})[\s\-]?([A-Za-z]{2})', plate.strip())
+    if match:
+        return f"{match.group(1).upper()}-{match.group(2)}-{match.group(3).upper()}"
+    return plate.upper()
+
+# --- 4. FONCTION POUR ENREGISTRER DANS POSTGRESQL ---
 def save_to_db(plate, lat, lon, device_id):
     try:
         conn = psycopg2.connect(**DB_SETTINGS)
@@ -72,7 +80,7 @@ def on_message(client, userdata, msg):
         data = json.loads(payload)
         
         plates_list = data.get("plates", [])
-        plate = plates_list[0].get("plate", "INCONNUE") if plates_list else "AUCUNE_DETECTION"
+        plate = normalize_plate(plates_list[0].get("plate", "INCONNUE")) if plates_list else "AUCUNE_DETECTION"
         
         location = data.get("location", {})
         lat = location.get("lat", 0.0)
